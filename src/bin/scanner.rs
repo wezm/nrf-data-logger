@@ -7,11 +7,12 @@ use core::{char, str};
 use nrf52840_hal as hal;
 use nrf_data_logger as _; // global logger + panicking-behavior + memory layout
 
+use rubble::link::filter::AddressFilter;
 use rubble::link::AddressKind;
 use {
     rubble::{
         beacon::{BeaconScanner, ScanCallback},
-        link::{ad_structure::AdStructure, filter::AllowAll, DeviceAddress, MIN_PDU_BUF},
+        link::{ad_structure::AdStructure, DeviceAddress, MIN_PDU_BUF},
         time::{Duration, Timer},
     },
     rubble_nrf5x::{
@@ -21,6 +22,7 @@ use {
 };
 
 pub struct BeaconScanCallback;
+pub struct HomeDeviceFilter;
 
 impl ScanCallback for BeaconScanCallback {
     fn beacon<'a, I>(&mut self, addr: DeviceAddress, _data: I)
@@ -28,11 +30,19 @@ impl ScanCallback for BeaconScanCallback {
         I: Iterator<Item = AdStructure<'a>>,
     {
         // Detected an advertisement frame! Do something with it here.
-        if addr.kind() == AddressKind::Public {
-            let mut buf = [0; 12 + 5];
-            let addr_str = fmt_addr(addr.raw(), &mut buf);
-            defmt::info!("Got advertisement frame from address {}", addr_str);
-        }
+        let mut buf = [0; 12 + 5];
+        let addr_str = fmt_addr(addr.raw(), &mut buf);
+        defmt::info!("Got advertisement frame from address {}", addr_str);
+    }
+}
+
+const INDOOR_SENSOR: [u8; 6] = [0x24, 0xBE, 0x59, 0x38, 0xC1, 0xA4]; // A4:C1:38:59:BE:24
+const OUTDOOR_SENSOR: [u8; 6] = [0xE3, 0x37, 0x3C, 0x50, 0xEC, 0x4E]; // E3:37:3C:50:EC:4E
+
+impl AddressFilter for HomeDeviceFilter {
+    fn matches(&self, address: DeviceAddress) -> bool {
+        address == DeviceAddress::new(INDOOR_SENSOR, AddressKind::Public)
+            || address == DeviceAddress::new(OUTDOOR_SENSOR, AddressKind::Public)
     }
 }
 
@@ -45,7 +55,7 @@ const APP: () = {
         ble_rx_buf: PacketBuffer,
         radio: BleRadio,
         timer: BleTimer<hal::pac::TIMER0>,
-        scanner: BeaconScanner<BeaconScanCallback, AllowAll>,
+        scanner: BeaconScanner<BeaconScanCallback, HomeDeviceFilter>,
     }
 
     #[init(resources = [ble_tx_buf, ble_rx_buf])]
@@ -69,7 +79,8 @@ const APP: () = {
         // Set up beacon scanner for continuous scanning. The advertisement
         // channel that is being listened on (scan window) will be switched
         // every 500 ms.
-        let mut scanner = BeaconScanner::new(BeaconScanCallback);
+        let mut scanner = BeaconScanner::with_filter(BeaconScanCallback, HomeDeviceFilter);
+        // TODO then: Parse the advertising data
         let scanner_cmd = scanner.configure(timer.now(), Duration::from_millis(500));
 
         // Reconfigure radio and timer
