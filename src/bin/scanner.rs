@@ -107,6 +107,16 @@ impl ScanCallback for BeaconScanCallback {
                         }
                     }
                 }
+                AdStructure::ManufacturerSpecificData {
+                    company_identifier,
+                    payload,
+                } => {
+                    defmt::info!(
+                        "Manufacturer specific data: CompanyId({:X}), payload len: {}",
+                        company_identifier.as_u16(),
+                        payload.len()
+                    )
+                }
                 AdStructure::Unknown { ty: 8, data } => {
                     defmt::info!(
                         "Shortened local name {}",
@@ -238,4 +248,11 @@ mod tests {
         let addr_str = fmt_addr(&addr, &mut buf);
         assert_eq!(addr_str, "A4:C1:38:59:BE:24");
     }
+
+    /*
+    [CHG] Device E3:37:3C:50:EC:4E ManufacturerData Key: 0xec88
+    [CHG] Device E3:37:3C:50:EC:4E ManufacturerData Value:
+      00 1b 09 f1 18 64 02                             .....d.
+
+     */
 }
