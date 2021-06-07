@@ -1,6 +1,8 @@
 Home Data Logger
 ================
 
+A work in progress data logger for home weather and electricity data running on nRF52840.
+
 TODO: Add more info
 
 Notes
