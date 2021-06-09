@@ -6,7 +6,7 @@ use nrf52840_hal as hal;
 use nrf_data_logger as _; // global logger + panicking-behavior + memory layout
 
 use rubble::link::filter::AddressFilter;
-use rubble::link::{AddressKind, CompanyId};
+use rubble::link::AddressKind;
 use {
     rubble::{
         beacon::{BeaconScanner, ScanCallback},
@@ -19,12 +19,13 @@ use {
     },
 };
 
-use shared::{govee, bluetooth};
+use shared::{bluetooth, govee};
 
-const SENSOR_COMPANY_ID: CompanyId = CompanyId::from_raw(0xEC88);
-const INDOOR_SENSOR: [u8; 6] = [0x24, 0xBE, 0x59, 0x38, 0xC1, 0xA4]; // A4:C1:38:59:BE:24 H5075
-const OUTDOOR_SENSOR: [u8; 6] = [0x4E, 0xEC, 0x50, 0x3C, 0x37, 0xE3]; // E3:37:3C:50:EC:4E H5074
-const SENSOR_MACS: &[[u8; 6]] = &[INDOOR_SENSOR, OUTDOOR_SENSOR];
+const INDOOR_SENSOR: DeviceAddress =
+    DeviceAddress::new([0x24, 0xBE, 0x59, 0x38, 0xC1, 0xA4], AddressKind::Public); // A4:C1:38:59:BE:24 H5075
+const OUTDOOR_SENSOR: DeviceAddress =
+    DeviceAddress::new([0x4E, 0xEC, 0x50, 0x3C, 0x37, 0xE3], AddressKind::Public); // E3:37:3C:50:EC:4E H5074
+const DEVICE_ADDRESSES: &[DeviceAddress] = &[INDOOR_SENSOR, OUTDOOR_SENSOR];
 
 pub struct BeaconScanCallback;
 pub struct HomeDeviceFilter;
@@ -63,71 +64,17 @@ impl ScanCallback for BeaconScanCallback {
                     // defmt::info!("ShortenedLocalName")
                 }
                 AdStructure::ManufacturerSpecificData {
-                    company_identifier: SENSOR_COMPANY_ID,
-                    payload,
-                } => {
-                    match govee::parse_payload(payload) {
-                        Ok(readings) => {
-                            defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, readings.temperature, readings.humidity, readings.battery);
-                        }
-                        Err(govee::Error::ParseError) => {
-                            defmt::error!("payload parse error")
-                        }
-                        Err(govee::Error::UnknownPayloadLength) => {}
-                    }
-
-                    // match payload.len() {
-                    //     6 => {
-                    //         // Govee H5072/H5075
-                    //         let mut bytes = ByteReader::new(payload);
-                    //         bytes.skip(1).unwrap();
-                    //         let mut temp_hum: [u8; 4] = bytes.read_array().unwrap();
-                    //         let battery = temp_hum[3];
-                    //         temp_hum[3] = 0;
-                    //         let temp_hum_raw = u32::from_be_bytes(temp_hum) >> 8;
-                    //
-                    //         // casts are safe because temp_hum_raw is only 3 bytes
-                    //         let temp = if temp_hum_raw & 0x800000 == 0 {
-                    //             (temp_hum_raw) as f32 / 10_000.
-                    //         } else {
-                    //             (temp_hum_raw ^ 0x800000) as f32 / -10_000.
-                    //         };
-                    //         let humidity = (temp_hum_raw % 1000) as f32 / 10.;
-                    //         // float((self.packet % 1000) / 10)
-                    //
-                    //         defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
-                    //     }
-                    //     7 => {
-                    //         // Govee H5074
-                    //         let mut bytes = ByteReader::new(payload);
-                    //         bytes.skip(1).unwrap();
-                    //         let temp_bytes: [u8; 2] = bytes.read_array().unwrap();
-                    //         let temp_raw = i16::from_le_bytes(temp_bytes);
-                    //         let temp = f32::from(temp_raw) / 100.;
-                    //         let humidity_raw = bytes.read_u16_le().unwrap();
-                    //         let humidity = f32::from(humidity_raw) / 100.;
-                    //         let battery = bytes.read_u8().unwrap();
-                    //
-                    //         defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
-                    //     }
-                    //     _ => {
-                    //         defmt::info!(
-                    //             "Manufacturer specific data: unexpected payload len: {}",
-                    //             payload.len()
-                    //         )
-                    //     }
-                    // }
-                }
-                AdStructure::ManufacturerSpecificData {
                     company_identifier,
                     payload,
-                } => {
-                    defmt::info!(
-                        "Manufacturer specific data: CompanyId({:X}), payload len: {}",
-                        company_identifier.as_u16(),
-                        payload.len()
-                    )
-                }
+                } => match govee::parse_payload(company_identifier, payload) {
+                    Ok(readings) => {
+                        defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, readings.temperature, readings.humidity, readings.battery);
+                    }
+                    Err(govee::Error::ParseError) => {
+                        defmt::error!("payload parse error")
+                    }
+                    Err(govee::Error::Irrelevant) => {}
+                },
                 AdStructure::Unknown { ty: 8, .. } => {
                     // defmt::info!(
                     //     "Shortened local name {}",
@@ -153,10 +100,10 @@ impl ScanCallback for BeaconScanCallback {
 
 impl AddressFilter for HomeDeviceFilter {
     fn matches(&self, address: DeviceAddress) -> bool {
-        SENSOR_MACS
+        DEVICE_ADDRESSES
             .iter()
             .copied()
-            .any(|mac| address == DeviceAddress::new(mac, AddressKind::Public))
+            .any(|device| address == device)
     }
 }
 

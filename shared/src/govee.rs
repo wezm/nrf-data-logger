@@ -1,4 +1,6 @@
+use crate::govee::Error::Irrelevant;
 use rubble::bytes::ByteReader;
+use rubble::link::CompanyId;
 
 pub struct ClimateReadings {
     pub temperature: f32,
@@ -8,10 +10,16 @@ pub struct ClimateReadings {
 
 pub enum Error {
     ParseError,
-    UnknownPayloadLength
+    Irrelevant,
 }
 
-pub fn parse_payload(payload: &[u8]) -> Result<ClimateReadings, Error> {
+const SENSOR_COMPANY_ID: CompanyId = CompanyId::from_raw(0xEC88);
+
+pub fn parse_payload(company_id: CompanyId, payload: &[u8]) -> Result<ClimateReadings, Error> {
+    if company_id != SENSOR_COMPANY_ID {
+        return Err(Irrelevant);
+    }
+
     match payload.len() {
         6 => {
             // Govee H5072/H5075
@@ -51,9 +59,7 @@ pub fn parse_payload(payload: &[u8]) -> Result<ClimateReadings, Error> {
                 battery,
             })
         }
-        _ => {
-            Err(Error::UnknownPayloadLength)
-        }
+        _ => Err(Error::Irrelevant),
     }
 }
 
