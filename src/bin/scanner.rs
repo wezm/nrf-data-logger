@@ -25,6 +25,7 @@ use {
 const SENSOR_COMPANY_ID: CompanyId = CompanyId::from_raw(0xEC88);
 const INDOOR_SENSOR: [u8; 6] = [0x24, 0xBE, 0x59, 0x38, 0xC1, 0xA4]; // A4:C1:38:59:BE:24 H5075
 const OUTDOOR_SENSOR: [u8; 6] = [0x4E, 0xEC, 0x50, 0x3C, 0x37, 0xE3]; // E3:37:3C:50:EC:4E H5074
+const SENSOR_MACS: &[[u8; 6]] = &[INDOOR_SENSOR, OUTDOOR_SENSOR];
 
 pub struct BeaconScanCallback;
 pub struct HomeDeviceFilter;
@@ -85,11 +86,12 @@ impl ScanCallback for BeaconScanCallback {
                             let humidity = (temp_hum_raw % 1000) as f32 / 10.;
                             // float((self.packet % 1000) / 10)
 
-                            defmt::info!("Manufacturer specific data: {} - Temp: {}, Humidity: {}, Battery: {}" , addr_str, temp, humidity, battery);
+                            defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
                         }
                         7 => {
                             // Govee H5074
                             let mut bytes = ByteReader::new(payload);
+                            bytes.skip(1).unwrap();
                             let temp_bytes: [u8; 2] = bytes.read_array().unwrap();
                             let temp_raw = i16::from_le_bytes(temp_bytes);
                             let temp = f32::from(temp_raw) / 100.;
@@ -97,7 +99,7 @@ impl ScanCallback for BeaconScanCallback {
                             let humidity = f32::from(humidity_raw) / 100.;
                             let battery = bytes.read_u8().unwrap();
 
-                            defmt::info!("Manufacturer specific data: Outdoor - Temp: {}, Humidity: {}, Battery: {}" , temp, humidity, battery);
+                            defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
                         }
                         _ => {
                             defmt::info!(
@@ -118,16 +120,16 @@ impl ScanCallback for BeaconScanCallback {
                     )
                 }
                 AdStructure::Unknown { ty: 8, data } => {
-                    defmt::info!(
-                        "Shortened local name {}",
-                        str::from_utf8(data).unwrap_or("not utf-8")
-                    )
+                    // defmt::info!(
+                    //     "Shortened local name {}",
+                    //     str::from_utf8(data).unwrap_or("not utf-8")
+                    // )
                 }
                 AdStructure::Unknown { ty: 9, data } => {
-                    defmt::info!(
-                        "Complete local name {}",
-                        str::from_utf8(data).unwrap_or("not utf-8")
-                    )
+                    // defmt::info!(
+                    //     "Complete local name {}",
+                    //     str::from_utf8(data).unwrap_or("not utf-8")
+                    // )
                 }
                 AdStructure::Unknown { ty, data } => {
                     defmt::info!("Unknown type {}, {} bytes", ty, data.len())
@@ -142,8 +144,10 @@ impl ScanCallback for BeaconScanCallback {
 
 impl AddressFilter for HomeDeviceFilter {
     fn matches(&self, address: DeviceAddress) -> bool {
-        address == DeviceAddress::new(INDOOR_SENSOR, AddressKind::Public)
-            || address == DeviceAddress::new(OUTDOOR_SENSOR, AddressKind::Public)
+        SENSOR_MACS
+            .iter()
+            .copied()
+            .any(|mac| address == DeviceAddress::new(mac, AddressKind::Public))
     }
 }
 
