@@ -97,6 +97,40 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_h5075_2() {
+        // This data came from https://github.com/Thrilleratplay/GoveeWatcher
+        // 88ec00 03519e 64 00 Temp: 21.7502°C Temp: 71.1504°F Humidity: 50.2%
+        let payload = &[0x00, 0x03, 0x51, 0x9e, 0x64, 0x00];
+        let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
+        let expected = ClimateReadings {
+            temperature: 2175,
+            humidity: 502,
+            battery: 100,
+        };
+        assert_eq!(readings, expected);
+    }
+
+    #[test]
+    fn test_parse_h5075_3() {
+        // This data came from https://github.com/asednev/govee-bt-client/blob/66a5027838c66d3ae16ee037616989410061789d/src/decode.spec.ts#L26
+        // const hex = "88ec000368d15800";
+        // const expectedReading = {
+        //     battery: 88,
+        //     humidity: 44.1,
+        //     tempInC: 22.3441,
+        //     tempInF: 72.21938,
+        // };
+        let payload = &[0x00, 0x03, 0x68, 0xd1, 0x58, 0x00];
+        let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
+        let expected = ClimateReadings {
+            temperature: 2234,
+            humidity: 441,
+            battery: 88,
+        };
+        assert_eq!(readings, expected);
+    }
+
+    #[test]
     fn test_parse_h5074() {
         let payload = &[0x00, 0x1b, 0x09, 0xf1, 0x18, 0x64, 0x02];
         let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
@@ -119,4 +153,20 @@ mod tests {
         };
         assert_eq!(readings, expected);
     }
+
+    #[test]
+    fn test_parse_h5074_3() {
+        // This data came from https://github.com/neilsheps/GoveeTemperatureAndHumidity
+        // 88EC00 0902 CD15 64 02 (Temp) 5.21°C (Humidity) 55.81% (Battery) 100%
+        let payload = &[0x00, 0x09, 0x02, 0xCD, 0x15, 0x64, 0x02];
+        let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
+        let expected = ClimateReadings {
+            temperature: 521,
+            humidity: 558,
+            battery: 100,
+        };
+        assert_eq!(readings, expected);
+    }
+
+    // TODO: Add tests for negative temperatures from both devices
 }
