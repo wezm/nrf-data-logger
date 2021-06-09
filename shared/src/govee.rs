@@ -1,13 +1,16 @@
-use crate::govee::Error::Irrelevant;
 use rubble::bytes::ByteReader;
 use rubble::link::CompanyId;
 
+use crate::govee::Error::Irrelevant;
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct ClimateReadings {
-    pub temperature: f32,
-    pub humidity: f32,
-    pub battery: u8,
+    temperature: i32,
+    humidity: u32,
+    battery: u8,
 }
 
+#[derive(Debug)]
 pub enum Error {
     ParseError,
     Irrelevant,
@@ -32,14 +35,14 @@ pub fn parse_payload(company_id: CompanyId, payload: &[u8]) -> Result<ClimateRea
 
             // casts are safe because temp_hum_raw is only 3 bytes
             let temp = if temp_hum_raw & 0x800000 == 0 {
-                (temp_hum_raw) as f32 / 10_000.
+                (temp_hum_raw / 100) as i32
             } else {
-                (temp_hum_raw ^ 0x800000) as f32 / -10_000.
+                (temp_hum_raw ^ 0x800000) as i32 / -100
             };
-            let humidity = (temp_hum_raw % 1000) as f32 / 10.;
+            let humidity = temp_hum_raw % 1000;
             Ok(ClimateReadings {
                 temperature: temp,
-                humidity: humidity,
+                humidity,
                 battery,
             })
         }
@@ -49,13 +52,13 @@ pub fn parse_payload(company_id: CompanyId, payload: &[u8]) -> Result<ClimateRea
             bytes.skip(1).unwrap();
             let temp_bytes: [u8; 2] = bytes.read_array().unwrap();
             let temp_raw = i16::from_le_bytes(temp_bytes);
-            let temp = f32::from(temp_raw) / 100.;
+            let temp = temp_raw;
             let humidity_raw = bytes.read_u16_le().unwrap();
-            let humidity = f32::from(humidity_raw) / 100.;
+            let humidity = humidity_raw / 10;
             let battery = bytes.read_u8().unwrap();
             Ok(ClimateReadings {
-                temperature: temp,
-                humidity: humidity,
+                temperature: i32::from(temp),
+                humidity: u32::from(humidity),
                 battery,
             })
         }
@@ -63,14 +66,57 @@ pub fn parse_payload(company_id: CompanyId, payload: &[u8]) -> Result<ClimateRea
     }
 }
 
+impl ClimateReadings {
+    pub fn temperature(&self) -> f32 {
+        self.temperature as f32 / 100.
+    }
+
+    pub fn humidity(&self) -> f32 {
+        self.humidity as f32 / 10.
+    }
+
+    pub fn battery(&self) -> u8 {
+        self.battery
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /*
-    [CHG] Device E3:37:3C:50:EC:4E ManufacturerData Key: 0xec88
-    [CHG] Device E3:37:3C:50:EC:4E ManufacturerData Value:
-      00 1b 09 f1 18 64 02                             .....d.
+    #[test]
+    fn test_parse_h5075() {
+        let payload = &[0x00, 0x03, 0x7c, 0x8a, 0x37, 0x00];
+        let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
+        let expected = ClimateReadings {
+            temperature: 2284,
+            humidity: 490,
+            battery: 55,
+        };
+        assert_eq!(readings, expected);
+    }
 
-     */
+    #[test]
+    fn test_parse_h5074() {
+        let payload = &[0x00, 0x1b, 0x09, 0xf1, 0x18, 0x64, 0x02];
+        let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
+        let expected = ClimateReadings {
+            temperature: 2331,
+            humidity: 638,
+            battery: 100,
+        };
+        assert_eq!(readings, expected);
+    }
+
+    #[test]
+    fn test_parse_h5074_2() {
+        let payload = &[0x00, 0x71, 0x05, 0xd7, 0x14, 0x64, 0x02];
+        let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
+        let expected = ClimateReadings {
+            temperature: 1393,
+            humidity: 533,
+            battery: 100,
+        };
+        assert_eq!(readings, expected);
+    }
 }

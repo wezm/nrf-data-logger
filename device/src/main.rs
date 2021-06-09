@@ -68,7 +68,7 @@ impl ScanCallback for BeaconScanCallback {
                     payload,
                 } => match govee::parse_payload(company_identifier, payload) {
                     Ok(readings) => {
-                        defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, readings.temperature, readings.humidity, readings.battery);
+                        defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, readings.temperature(), readings.humidity(), readings.battery());
                     }
                     Err(govee::Error::ParseError) => {
                         defmt::error!("payload parse error")
