@@ -2,12 +2,9 @@
 #![no_main]
 #![warn(rust_2018_idioms)]
 
-use core::{char, str};
-
 use nrf52840_hal as hal;
 use nrf_data_logger as _; // global logger + panicking-behavior + memory layout
 
-use rubble::bytes::ByteReader;
 use rubble::link::filter::AddressFilter;
 use rubble::link::{AddressKind, CompanyId};
 use {
@@ -21,6 +18,8 @@ use {
         timer::BleTimer,
     },
 };
+
+use shared::{govee, bluetooth};
 
 const SENSOR_COMPANY_ID: CompanyId = CompanyId::from_raw(0xEC88);
 const INDOOR_SENSOR: [u8; 6] = [0x24, 0xBE, 0x59, 0x38, 0xC1, 0xA4]; // A4:C1:38:59:BE:24 H5075
@@ -37,7 +36,7 @@ impl ScanCallback for BeaconScanCallback {
     {
         // Detected an advertisement frame! Do something with it here.
         let mut buf = [0; 12 + 5];
-        let addr_str = fmt_addr(addr.raw(), &mut buf);
+        let addr_str = bluetooth::fmt_addr(addr.raw(), &mut buf);
         // defmt::info!("Got advertisement frame from address {}", addr_str);
 
         for ad in data {
@@ -67,47 +66,57 @@ impl ScanCallback for BeaconScanCallback {
                     company_identifier: SENSOR_COMPANY_ID,
                     payload,
                 } => {
-                    match payload.len() {
-                        6 => {
-                            // Govee H5072/H5075
-                            let mut bytes = ByteReader::new(payload);
-                            bytes.skip(1).unwrap();
-                            let mut temp_hum: [u8; 4] = bytes.read_array().unwrap();
-                            let battery = temp_hum[3];
-                            temp_hum[3] = 0;
-                            let temp_hum_raw = u32::from_be_bytes(temp_hum) >> 8;
-
-                            // casts are safe because temp_hum_raw is only 3 bytes
-                            let temp = if temp_hum_raw & 0x800000 == 0 {
-                                (temp_hum_raw) as f32 / 10_000.
-                            } else {
-                                (temp_hum_raw ^ 0x800000) as f32 / -10_000.
-                            };
-                            let humidity = (temp_hum_raw % 1000) as f32 / 10.;
-                            // float((self.packet % 1000) / 10)
-
-                            defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
+                    match govee::parse_payload(payload) {
+                        Ok(readings) => {
+                            defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, readings.temperature, readings.humidity, readings.battery);
                         }
-                        7 => {
-                            // Govee H5074
-                            let mut bytes = ByteReader::new(payload);
-                            bytes.skip(1).unwrap();
-                            let temp_bytes: [u8; 2] = bytes.read_array().unwrap();
-                            let temp_raw = i16::from_le_bytes(temp_bytes);
-                            let temp = f32::from(temp_raw) / 100.;
-                            let humidity_raw = bytes.read_u16_le().unwrap();
-                            let humidity = f32::from(humidity_raw) / 100.;
-                            let battery = bytes.read_u8().unwrap();
-
-                            defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
+                        Err(govee::Error::ParseError) => {
+                            defmt::error!("payload parse error")
                         }
-                        _ => {
-                            defmt::info!(
-                                "Manufacturer specific data: unexpected payload len: {}",
-                                payload.len()
-                            )
-                        }
+                        Err(govee::Error::UnknownPayloadLength) => {}
                     }
+
+                    // match payload.len() {
+                    //     6 => {
+                    //         // Govee H5072/H5075
+                    //         let mut bytes = ByteReader::new(payload);
+                    //         bytes.skip(1).unwrap();
+                    //         let mut temp_hum: [u8; 4] = bytes.read_array().unwrap();
+                    //         let battery = temp_hum[3];
+                    //         temp_hum[3] = 0;
+                    //         let temp_hum_raw = u32::from_be_bytes(temp_hum) >> 8;
+                    //
+                    //         // casts are safe because temp_hum_raw is only 3 bytes
+                    //         let temp = if temp_hum_raw & 0x800000 == 0 {
+                    //             (temp_hum_raw) as f32 / 10_000.
+                    //         } else {
+                    //             (temp_hum_raw ^ 0x800000) as f32 / -10_000.
+                    //         };
+                    //         let humidity = (temp_hum_raw % 1000) as f32 / 10.;
+                    //         // float((self.packet % 1000) / 10)
+                    //
+                    //         defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
+                    //     }
+                    //     7 => {
+                    //         // Govee H5074
+                    //         let mut bytes = ByteReader::new(payload);
+                    //         bytes.skip(1).unwrap();
+                    //         let temp_bytes: [u8; 2] = bytes.read_array().unwrap();
+                    //         let temp_raw = i16::from_le_bytes(temp_bytes);
+                    //         let temp = f32::from(temp_raw) / 100.;
+                    //         let humidity_raw = bytes.read_u16_le().unwrap();
+                    //         let humidity = f32::from(humidity_raw) / 100.;
+                    //         let battery = bytes.read_u8().unwrap();
+                    //
+                    //         defmt::info!("Manufacturer specific data: {} - Temp: {}℃, Humidity: {}%, Battery: {}%" , addr_str, temp, humidity, battery);
+                    //     }
+                    //     _ => {
+                    //         defmt::info!(
+                    //             "Manufacturer specific data: unexpected payload len: {}",
+                    //             payload.len()
+                    //         )
+                    //     }
+                    // }
                 }
                 AdStructure::ManufacturerSpecificData {
                     company_identifier,
@@ -119,13 +128,13 @@ impl ScanCallback for BeaconScanCallback {
                         payload.len()
                     )
                 }
-                AdStructure::Unknown { ty: 8, data } => {
+                AdStructure::Unknown { ty: 8, .. } => {
                     // defmt::info!(
                     //     "Shortened local name {}",
                     //     str::from_utf8(data).unwrap_or("not utf-8")
                     // )
                 }
-                AdStructure::Unknown { ty: 9, data } => {
+                AdStructure::Unknown { ty: 9, .. } => {
                     // defmt::info!(
                     //     "Complete local name {}",
                     //     str::from_utf8(data).unwrap_or("not utf-8")
@@ -227,36 +236,3 @@ const APP: () = {
         timer.configure_interrupt(cmd.next_update);
     }
 };
-
-fn fmt_addr<'buf>(addr: &[u8; 6], addr_str: &'buf mut [u8; 12 + 5]) -> &'buf str {
-    *addr_str = [b':'; 12 + 5];
-    for (i, byte) in addr.iter().copied().rev().enumerate() {
-        addr_str[i * 3] = char::from_digit((u32::from(byte) & 0xF0) >> 4, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-        addr_str[i * 3 + 1] = char::from_digit(u32::from(byte) & 0xF, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-    }
-    str::from_utf8(addr_str).unwrap()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_fmt_addr() {
-        let addr = [0x24, 0xBE, 0x59, 0x38, 0xC1, 0xA4];
-        let mut buf = [0; 12 + 5];
-        let addr_str = fmt_addr(&addr, &mut buf);
-        assert_eq!(addr_str, "A4:C1:38:59:BE:24");
-    }
-
-    /*
-    [CHG] Device E3:37:3C:50:EC:4E ManufacturerData Key: 0xec88
-    [CHG] Device E3:37:3C:50:EC:4E ManufacturerData Value:
-      00 1b 09 f1 18 64 02                             .....d.
-
-     */
-}
