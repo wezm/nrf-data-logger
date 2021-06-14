@@ -168,5 +168,17 @@ mod tests {
         assert_eq!(readings, expected);
     }
 
-    // TODO: Add tests for negative temperatures from both devices
+    #[test]
+    fn test_parse_h5074_negative() {
+        let payload = &[0x00, 0x23, 0xf9, 0x33, 0x1a, 0x5e, 0x02];
+        let readings = parse_payload(SENSOR_COMPANY_ID, payload).unwrap();
+        let expected = ClimateReadings {
+            temperature: -1757,
+            humidity: 670,
+            battery: 94,
+        };
+        assert_eq!(readings, expected);
+    }
+
+    // TODO: Add test for negative temperatures from H2075
 }
