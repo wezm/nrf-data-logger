@@ -21,11 +21,30 @@ use {
 
 use shared::{bluetooth, govee};
 
-const INDOOR_SENSOR: DeviceAddress =
-    DeviceAddress::new([0x24, 0xBE, 0x59, 0x38, 0xC1, 0xA4], AddressKind::Public); // A4:C1:38:59:BE:24 H5075
-const OUTDOOR_SENSOR: DeviceAddress =
-    DeviceAddress::new([0x4E, 0xEC, 0x50, 0x3C, 0x37, 0xE3], AddressKind::Public); // E3:37:3C:50:EC:4E H5074
-const DEVICE_ADDRESSES: &[DeviceAddress] = &[INDOOR_SENSOR, OUTDOOR_SENSOR];
+macro_rules! addr {
+    ($b1:literal : $b2:literal : $b3:literal : $b4:literal : $b5:literal : $b6:literal) => {
+        [$b6, $b5, $b4, $b3, $b2, $b1]
+    };
+}
+
+// A4:C1:38:59:BE:24 GVH5075_BE24 -- Indoor
+const GVH5075_BE24: DeviceAddress =
+    DeviceAddress::new(addr!(0xA4:0xC1:0x38:0x59:0xBE:0x24), AddressKind::Public);
+// E3:37:3C:50:EC:4E Govee_H5074_EC4E -- Outdoor
+const GOVEE_H5074_EC4E: DeviceAddress =
+    DeviceAddress::new(addr!(0xE3:0x37:0x3C:0x50:0xEC:0x4E), AddressKind::Public);
+// E0:17:54:D0:A8:ED Govee_H5074_A8ED
+const GOVEE_H5074_A8ED: DeviceAddress =
+    DeviceAddress::new(addr!(0xE0:0x17:0x54:0xD0:0xA8:0xED), AddressKind::Public);
+// E3:60:59:42:EC:C1 Govee_H5074_ECC1
+const GOVEE_H5074_ECC1: DeviceAddress =
+    DeviceAddress::new(addr!(0xE3:0x60:0x59:0x42:0xEC:0xC1), AddressKind::Public);
+const DEVICE_ADDRESSES: &[DeviceAddress] = &[
+    GVH5075_BE24,
+    GOVEE_H5074_EC4E,
+    GOVEE_H5074_A8ED,
+    GOVEE_H5074_ECC1,
+];
 
 pub struct BeaconScanCallback;
 pub struct HomeDeviceFilter;
