@@ -180,5 +180,5 @@ mod tests {
         assert_eq!(readings, expected);
     }
 
-    // TODO: Add test for negative temperatures from H2075
+    // TODO: Add test for negative temperatures from H5075
 }
